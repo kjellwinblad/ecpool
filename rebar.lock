@@ -1,5 +1,9 @@
 {"1.2.0",
-[{<<"gproc">>,{pkg,<<"gproc">>,<<"0.8.0">>},0}]}.
+[{<<"gproc">>,{pkg,<<"gproc">>,<<"0.8.0">>},0},
+ {<<"snabbkaffe">>,
+  {git,"https://github.com/kafka4beam/snabbkaffe.git",
+       {ref,"758ab63171dc71e775fae4be06a3d8b1f80da1f1"}},
+  0}]}.
 [
 {pkg_hash,[
  {<<"gproc">>, <<"CEA02C578589C61E5341FCE149EA36CCEF236CC2ECAC8691FBA408E7EA77EC2F">>}]},

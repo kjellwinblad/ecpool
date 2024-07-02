@@ -46,7 +46,10 @@ all() ->
 groups() ->
     [{all, [sequence],
       [t_start_pool,
+       t_start_pool_connect_fail,
        t_start_pool_any_name,
+       t_start_sup_pool_one_initial_connect_fail,
+       t_start_pool_one_initial_connect_fail,
        t_start_sup_pool,
        t_empty_pool,
        t_empty_hash_pool,
@@ -64,6 +67,7 @@ groups() ->
 init_per_suite(Config) ->
     {ok, _} = application:ensure_all_started(gproc),
     {ok, _} = application:ensure_all_started(ecpool),
+    snabbkaffe:fix_ct_logging(),
     Config.
 
 end_per_suite(_Config) ->
@@ -79,6 +83,36 @@ t_start_pool(_Config) ->
                                                         ?debugFmt("Call ~p: ~p~n", [I, Client])
                                                 end)
                   end, lists:seq(1, 10)).
+
+t_start_sup_pool_one_initial_connect_fail(_Config) ->
+    meck:new(test_client),
+    meck:expect(test_client,
+                connect,
+                fun(_Opts) ->
+                        meck:delete(test_client, connect, 1),
+                        {error, my_error_reason}
+                end),
+    {error, _} = ecpool:start_sup_pool(?POOL, test_client, ?POOL_OPTS),
+    meck:unload(),
+    ok.
+
+t_start_pool_one_initial_connect_fail(_Config) ->
+    meck:new(test_client),
+    meck:expect(test_client,
+                connect,
+                fun(_Opts) ->
+                        meck:delete(test_client, connect, 1),
+                        {error, my_error_reason}
+                end),
+    {error, _} = ecpool:start_pool(?POOL, test_client, ?POOL_OPTS),
+    meck:unload(),
+    ok.
+
+
+t_start_pool_connect_fail(_Config) ->
+    {error, _} = ecpool:start_sup_pool(?POOL, test_client_connect_fail, ?POOL_OPTS),
+    ecpool:stop_sup_pool(?POOL),
+    ok.
 
 t_start_pool_any_name(_Config) ->
     PoolName = {<<"a">>, b, [#{c => 1}]},

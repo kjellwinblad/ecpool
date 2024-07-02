@@ -81,13 +81,36 @@ pool_spec(ChildId, Pool, Mod, Opts) ->
 %% @doc Start the pool sup.
 -spec(start_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, term()}).
 start_pool(Pool, Mod, Opts) ->
-    ecpool_pool_sup:start_link(Pool, Mod, Opts).
+    %% See start_sup_pool/3 for an explanation of InitialConnectResponseRef
+    InitialConnectResponseRef = make_ref(),
+    {ok, Pid} = OkResponse = ecpool_pool_sup:start_link(Pool, Mod, Opts, {self(), InitialConnectResponseRef}),
+    case aggregate_initial_connect_responses_and_return(InitialConnectResponseRef, Opts) of
+        ok ->
+           OkResponse ;
+        Error ->
+            exit(Pid, normal),
+            Error
+    end.
 
 %% @doc Start the pool supervised by ecpool_sup
 start_sup_pool(Pool, Mod, Opts) ->
-    ecpool_sup:start_pool(Pool, Mod, Opts).
+    %% We never want any of the supervisors or the gen_server ecpool_worker to
+    %% return a non-ok response from the init function as this produces OTP
+    %% crash report log entries that we don't want as they are confusing for
+    %% users. To avoid this while still being able to return the error from the
+    %% initial connect attempt we pass our process ID and a response reference
+    %% to ecpool_worker.
+    InitialConnectResponseRef = make_ref(),
+    OkResponse = ecpool_sup:start_pool( Pool, Mod, Opts, {self(), InitialConnectResponseRef}),
+    case aggregate_initial_connect_responses_and_return(InitialConnectResponseRef, Opts) of
+        ok ->
+           OkResponse;
+        Error ->
+            stop_sup_pool(Pool),
+            Error
+    end.
 
-%% @doc Start the pool supervised by ecpool_sup
+%% @doc Stop the pool supervised by ecpool_sup
 stop_sup_pool(Pool) ->
     ecpool_sup:stop_pool(Pool).
 
@@ -183,3 +206,22 @@ exec({M, F, A}, Client) ->
     erlang:apply(M, F, [Client]++A);
 exec(Action, Client) when is_function(Action) ->
     Action(Client).
+
+%% Internal functions
+aggregate_initial_connect_responses_and_return(InitialConnectResponseRef, Opts) ->
+    lists:foldl(fun(_, ok) ->
+                        receive
+                            {Ref, ok} when Ref =:= InitialConnectResponseRef ->
+                                ok;
+                            {Ref, Error} when Ref =:= InitialConnectResponseRef ->
+                                Error
+                        end;
+                   (_, CurrentRet)  ->
+                        receive
+                            {Ref, _} when Ref =:= InitialConnectResponseRef->
+                                ok
+                        end,
+                        CurrentRet
+                end,
+                ok,
+                lists:seq(1, ecpool_worker_sup:pool_size(Opts))).
